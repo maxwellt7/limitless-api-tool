@@ -1,8 +1,9 @@
 import os
 import requests
 import tzlocal
+import time
 
-def get_lifelogs(api_key, api_url=os.getenv("LIMITLESS_API_URL") or "https://api.limitless.ai", endpoint="v1/lifelogs", limit=50, batch_size=10, includeMarkdown=True, includeHeadings=False, date=None, timezone=None, direction="asc"):
+def get_lifelogs(api_key, api_url=os.getenv("LIMITLESS_API_URL") or "https://api.limitless.ai", endpoint="v1/lifelogs", limit=50, batch_size=10, includeMarkdown=True, includeHeadings=False, date=None, timezone=None, direction="asc", max_retries=3, retry_delay=5):
     all_lifelogs = []
     cursor = None
     
@@ -25,12 +26,37 @@ def get_lifelogs(api_key, api_url=os.getenv("LIMITLESS_API_URL") or "https://api
         if cursor:
             params["cursor"] = cursor
             
-        response = requests.get(
-            f"{api_url}/{endpoint}",
-            headers={"X-API-Key": api_key},
-            params=params,
-        )
-
+        # Add retry logic
+        retries = 0
+        while retries < max_retries:
+            try:
+                response = requests.get(
+                    f"{api_url}/{endpoint}",
+                    headers={"X-API-Key": api_key},
+                    params=params,
+                    timeout=30  # Add a timeout to prevent hanging requests
+                )
+                
+                if response.ok:
+                    break  # Success, exit retry loop
+                elif response.status_code == 504:  # Gateway Timeout
+                    retries += 1
+                    print(f"Received 504 Gateway Timeout. Retry {retries}/{max_retries}...")
+                    if retries < max_retries:
+                        time.sleep(retry_delay)  # Wait before retrying
+                    else:
+                        raise Exception(f"HTTP error after {max_retries} retries! Status: {response.status_code}")
+                else:
+                    # For other errors, don't retry
+                    raise Exception(f"HTTP error! Status: {response.status_code}")
+            except requests.exceptions.RequestException as e:
+                retries += 1
+                print(f"Request exception: {e}. Retry {retries}/{max_retries}...")
+                if retries < max_retries:
+                    time.sleep(retry_delay)  # Wait before retrying
+                else:
+                    raise Exception(f"Request failed after {max_retries} retries: {e}")
+        
         if not response.ok:
             raise Exception(f"HTTP error! Status: {response.status_code}")
 
