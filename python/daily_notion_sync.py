@@ -1,6 +1,5 @@
 import os
 import requests
-import datetime
 import json
 from datetime import datetime, timedelta
 from _client import get_lifelogs
